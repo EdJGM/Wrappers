@@ -28,7 +28,7 @@ export default function DataTablePrimary<T extends DataTableValueArray = DataTab
     emptyMessageSubtitle = "Realice la búsqueda para visualizar resultados",
     showPaginator = true,
     defaultRows = 10,
-    useCustomStyles = false,
+    useCustomStyles = true,
 
     editMode,
     editingRows,
@@ -61,12 +61,14 @@ export default function DataTablePrimary<T extends DataTableValueArray = DataTab
         ...props,
         stripedRows: true,
         rowHover: true,
-        size: "small",
         paginator: showPaginator,
         rows: defaultRows,
         rowsPerPageOptions: [5, 10, 20, 50],
         className: `overflow-hidden rounded-lg shadow-sm ${className || ''}`,
-        style: { ...style },
+        style: {
+            ...style,
+            border: `1px solid ${COLORS.PRIMARY_BORDER}`
+        },
         emptyMessage: (
             <div className="flex flex-col items-center justify-center py-10 text-center">
                 <i className="pi pi-info-circle mb-3 text-3xl text-gray-400" />
@@ -74,25 +76,17 @@ export default function DataTablePrimary<T extends DataTableValueArray = DataTab
                 <p className="text-sm text-gray-500">{emptyMessageSubtitle}</p>
             </div>
         ),
+        paginatorPosition: "top",
+        paginatorTemplate: 'FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown',
+        currentPageReportTemplate: 'Mostrando {first} a {last} de {totalRecords} registros',
         pt: useCustomStyles ? {
             thead: { style: headerStyle },
             tbody: { style: bodyStyle },
-            header: {
-                style: {
-                    backgroundColor: COLORS.PRIMARY_LIGHT,
-                    borderColor: COLORS.PRIMARY,
-                    borderWidth: '2px'
-                }
+            column: {
+                headerCell: { style: headerStyle },
+                bodyCell: { style: bodyStyle }
             }
-        } : {
-            header: {
-                style: {
-                    backgroundColor: COLORS.PRIMARY_LIGHT,
-                    borderColor: COLORS.PRIMARY,
-                    borderWidth: '2px'
-                }
-            }
-        }
+        } : {}
     };
 
     if (editMode !== undefined) allProps.editMode = editMode;
