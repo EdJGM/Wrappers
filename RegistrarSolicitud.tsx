@@ -31,7 +31,7 @@ export default function RegistrarSolicitud() {
     const [swSolicitaSoloAlcantarillado, setSwSolicitaSoloAlcantarillado] = useState(false);
     const [swDatosSolicitaCiudadano, setSwDatosSolicitaCiudadano] = useState(false);
     const [swServiciosSolicitados, setSwServiciosSolicitados] = useState(false);
-    const [swEdicionServiciosSolicitados, setSwEdicionServiciosSolicitados] = useState(false);
+    const [, setSwEdicionServiciosSolicitados] = useState(false);
 
     // =================== DATOS ===================
     const [listaSolicitudes, setListaSolicitudes] = useState<SolicitudContratoRsDTO[]>([]);
@@ -255,11 +255,21 @@ export default function RegistrarSolicitud() {
             }
             if (fullData.cuenta) setSelectedCuenta(fullData.cuenta);
 
-            // Cargar Servicios (Si no vienen, mock generar)
-            if (fullData.socServPedido) {
+            if (fullData.servicios && fullData.servicios.length > 0) {
+                const mapped = fullData.servicios.map(s => ({
+                    ssoId: s.ssoId, 
+                    ssoEstado: s.ssoEstado,
+                    servicioPublicoId: s.servicioPublico.serId,
+                    servicioPublicoDescripcion: s.servicioPublico.serDescripcion,
+                    opcDiametroId: s.opcDiametro?.catId,
+                    opcDiametroNombre: s.opcDiametro?.catNombre
+                } as ServicioSolicitadoRqDTO));
+                setListaServiciosSolicitados(mapped);
+            }
+            else if (fullData.socServPedido) {
                 const servs = await solicitudService.generarServiciosPorDefecto(fullData.socServPedido);
                 const mapped = servs.map(s => ({
-                    ssoId: s.ssoId,
+                    ssoId: s.ssoId, 
                     ssoEstado: s.ssoEstado,
                     servicioPublicoId: s.servicioPublico.serId,
                     servicioPublicoDescripcion: s.servicioPublico.serDescripcion
@@ -292,12 +302,18 @@ export default function RegistrarSolicitud() {
     };
 
     const modificarCaracteristicaServicioSolicitado = () => {
-        const newList = listaServiciosSolicitados.map(s =>
-            s.ssoId === servicioSolicitado.ssoId ? {
-                ...servicioSolicitado,
-                opcDiametroNombre: listaCaracteristicasServicio.find(c => c.catId === servicioSolicitado.opcDiametroId)?.catNombre
-            } : s
-        );
+        const newList = listaServiciosSolicitados.map(s => {
+            const coincideId = s.ssoId && servicioSolicitado.ssoId && s.ssoId === servicioSolicitado.ssoId;
+            const coincideNuevo = !s.ssoId && !servicioSolicitado.ssoId && s.servicioPublicoId === servicioSolicitado.servicioPublicoId;
+
+            if (coincideId || coincideNuevo) {
+                return {
+                    ...servicioSolicitado,
+                    opcDiametroNombre: listaCaracteristicasServicio.find(c => c.catId === servicioSolicitado.opcDiametroId)?.catNombre
+                };
+            }
+            return s;
+        });
         setListaServiciosSolicitados(newList);
         setSwServiciosSolicitados(false);
         setSwEdicionServiciosSolicitados(false);
@@ -306,7 +322,14 @@ export default function RegistrarSolicitud() {
     return (
         <div className="card">
             <Toast ref={toast} />
-            {(loading || loadingAction) && <div className="fixed inset-0 bg-black/30 z-50 flex justify-center items-center"><LoadingSpinner /></div>}
+            {(loading || loadingAction) ? <div className="flex items-center justify-center min-h-screen bg-gray-50">
+                <div className="flex flex-col items-center gap-4">
+                    <LoadingSpinner style={{ width: '80px', height: '80px' }} />
+                    <span className="text-xl font-semibold text-gray-700">
+                        Cargando datos, por favor espere...
+                    </span>
+                </div>
+            </div> : null}
 
             {/* HEADER PRINCIPAL */}
             <div
@@ -368,19 +391,65 @@ export default function RegistrarSolicitud() {
                             <div className="flex items-center gap-2">
                                 <span className="font-bold w-32">Cuenta:</span>
                                 <div className="flex-1 max-w-xl flex gap-2">
-                                    <AutoCompletePrimary
-                                        value={selectedCuenta}
-                                        suggestions={cuentasSuggestions}
-                                        completeMethod={(e) => solicitudService.autocompletarCuentaAgua(e.query).then(setCuentasSuggestions)}
-                                        field="cueNumeroCta"
-                                        placeholder="Buscar..."
-                                        onChange={(e) => {
-                                            if (e.value && typeof e.value === 'object') onCuentaSelect(e.value);
-                                            else setSelectedCuenta(e.value);
-                                        }}
-                                        itemTemplate={(item: SerCuentaRsDTO) => <div>{item.cueNumeroCta} - {item.propietario?.proNombreCompleto}</div>}
-                                    />
-                                    <span className="text-xs text-gray-500 self-center">(Ingrese el Nro de Cuenta, Cedula o Apellidos del Propietario, Observación, Nro de MEDIDOR)</span>
+                                    {swNuevaSolicitud ? (
+                                        <AutoCompletePrimary
+                                            value={selectedCuenta}
+                                            suggestions={cuentasSuggestions}
+                                            completeMethod={(e) => solicitudService.autocompletarCuentaAgua(e.query).then(setCuentasSuggestions)}
+                                            field="cueNumeroCta"
+                                            placeholder="Buscar..."
+                                            onChange={(e) => {
+                                                if (e.value && typeof e.value === 'object') onCuentaSelect(e.value);
+                                                else setSelectedCuenta(e.value);
+                                            }}
+                                            itemTemplate={(item: SerCuentaRsDTO, index) => {
+                                                if (index === 0) {
+                                                    return (
+                                                        <>
+                                                            <div className="grid grid-cols-6 font-bold text-xs bg-blue-100 border-b border-blue-300 px-2 py-1">
+                                                                <span>Cuenta</span>
+                                                                <span>Medidor</span>
+                                                                <span>Apellido</span>
+                                                                <span>Nombre</span>
+                                                                <span>Cédula/RUC</span>
+                                                                <span>Clave Catastral</span>
+                                                            </div>
+                                                            <div className="grid grid-cols-6 items-center px-2 py-1 border-b border-gray-100 hover:bg-blue-50 transition text-xs">
+                                                                <span className="font-bold">{item.cueNumeroCta}</span>
+                                                                <span className="font-bold">{item.medidorNumero}</span>
+                                                                <span className="font-bold">{item.propietario?.proApellido}</span>
+                                                                <span className="font-bold">{item.propietario?.proNombre}</span>
+                                                                <span className="font-bold">{item.propietario?.proNumIdentificacion}</span>
+                                                                <span className="font-bold">{item.cueClaveCatastral}</span>
+                                                            </div>
+                                                        </>
+                                                    );
+                                                }
+                                                return (
+                                                    <div className="grid grid-cols-6 items-center px-2 py-1 border-b border-gray-100 hover:bg-blue-50 transition text-xs">
+                                                        <span className="font-bold">{item.cueNumeroCta}</span>
+                                                        <span className="font-bold">{item.medidorNumero}</span>
+                                                        <span className="font-bold">{item.propietario?.proApellido}</span>
+                                                        <span className="font-bold">{item.propietario?.proNombre}</span>
+                                                        <span className="font-bold">{item.propietario?.proNumIdentificacion}</span>
+                                                        <span className="font-bold">{item.cueClaveCatastral}</span>
+                                                    </div>
+                                                );
+                                            }}
+                                        />
+                                    ) : (
+                                        // Solo muestra la cuenta como label en modo EDIT
+                                        selectedCuenta ? (
+                                            <span className="p-2 bg-gray-100 rounded font-bold">
+                                                {selectedCuenta.cueNumeroCta} - {selectedCuenta.medidorNumero} - {selectedCuenta.propietario?.proNombre} {selectedCuenta.propietario?.proApellido}
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-500">Sin cuenta asociada</span>
+                                        )
+                                    )}
+                                    {swNuevaSolicitud ? <span className="text-xs text-gray-500 self-center">
+                                            (Ingrese el Nro de Cuenta, Cedula o Apellidos del Propietario, Observación, Nro de MEDIDOR)
+                                        </span> : null}                                
                                 </div>
                             </div>
                         </div> : null}
@@ -473,7 +542,9 @@ export default function RegistrarSolicitud() {
                             <h3 className="font-bold text-lg mb-2">Servicios de la Solicitud</h3>
                             <DataTablePrimary value={listaServiciosSolicitados} rows={5}>
                                 <Column header="Servicio" field="servicioPublicoDescripcion" />
-                                <Column header="Característica Solicitada" field="opcDiametro.catNombre" />     
+                                <Column header="Característica Solicitada" 
+                                    body={(r) => r.opcDiametroNombre || 'No especificado'}
+                                />     
                                 <Column header="Estado" body={(r) => r.ssoEstado === 1 ? 'Activo' : 'Inactivo'} />
                                 <Column header="Acciones" body={(r) => (
                                     <button onClick={() => editarRegistroServicioSolicitado(r)} className="text-green-600"><FaPencilAlt /></button>
@@ -486,10 +557,10 @@ export default function RegistrarSolicitud() {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                                 <div className="flex flex-col">
                                     <span className="font-bold mb-1">Servicio:</span>
-                                    <span className="p-2 bg-gray-100 rounded block">{servicioSolicitado.servicioPublicoDescripcion}</span>
+                            <span className="p-2 bg-gray-100 rounded block">  {servicioSolicitado.servicioPublicoDescripcion}</span>
                                 </div>
                                 <div className="flex flex-col">
-                                    <span className="font-bold mb-1">Característica:</span>
+                                    <span className="font-bold mb-1">Característica del Servicio Público:</span>
                                     <DropdownPrimary
                                         value={servicioSolicitado.opcDiametroId}
                                         options={listaCaracteristicasServicio}

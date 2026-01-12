@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.io.Serializable;
 import java.util.Date;
+import java.util.List;
 
 @Data
 @AllArgsConstructor
@@ -26,4 +27,5 @@ public class SolicitudContratoRsDTO implements Serializable {
     private CatPredioRsDTO predio;
     private SerCuentaRsDTO cuenta;
     private SerCategoriaRsDTO categoria;
+    private List<ServicioSolicitadoRsDTO> servicios;
 }

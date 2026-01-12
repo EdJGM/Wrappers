@@ -26,7 +26,7 @@ public class SolicitudContratoMapper {
             else estadoDescripcion = String.valueOf(entity.getSocEstadoSolicitud());
         }
 
-        return SolicitudContratoRsDTO.builder()
+        SolicitudContratoRsDTO dto = SolicitudContratoRsDTO.builder()
                 .socId(entity.getSocId())
                 .socFechaSolicitud(entity.getSocFechaSolicitud())
                 .socEstadoSolicitud(estadoDescripcion)
@@ -36,9 +36,37 @@ public class SolicitudContratoMapper {
                 .socFechaFormulario(entity.getSocFechaFormulario())
                 .socServPedido(entity.getSocServPedido())
                 .propietario(toGesPropietarioRsDTO(entity.getPropietario()))
-                .predio(toCatPredioRsDTO(entity.getPredio())) // Mapeo de relación CatPredio
-                .cuenta(toSerCuentaRsDTO(entity.getCuenta())) // Mapeo de relación SerCuenta
+                .predio(toCatPredioRsDTO(entity.getPredio()))
+                .cuenta(toSerCuentaRsDTOWithMedidor(entity.getCuenta()))
                 .categoria(toSerCategoriaRsDTO(entity.getCategoria()))
+                .build();
+        if (entity.getSerServicioSolicitadoList() != null && !entity.getSerServicioSolicitadoList().isEmpty()) {
+            List<ServicioSolicitadoRsDTO> serviciosDto = entity.getSerServicioSolicitadoList().stream()
+                    .map(this::toServicioSolicitadoRsDTO)
+                    .collect(Collectors.toList());
+            dto.setServicios(serviciosDto);
+        }
+        return dto;
+    }
+
+    private SerCuentaRsDTO toSerCuentaRsDTOWithMedidor(SerCuenta entity) {
+        if (entity == null) return null;
+
+        String numeroMedidor = null;
+        try {
+            if (entity.getSerCuentaMedidorList() != null && !entity.getSerCuentaMedidorList().isEmpty()) {
+                numeroMedidor = entity.getSerCuentaMedidorList().get(0).getMedidor().getMedNumeroMedidor();
+            }
+        } catch (Exception e) {
+            numeroMedidor = entity.getMedidor();
+        }
+
+        return SerCuentaRsDTO.builder()
+                .cueId(entity.getCueId())
+                .cueNumeroCta(entity.getCueNumeroCta())
+                .cueClaveCatastral(entity.getCueClaveCatastral())
+                .medidorNumero(numeroMedidor)
+                .propietario(toGesPropietarioRsDTO(entity.getPropietario()))
                 .build();
     }
 
@@ -123,21 +151,20 @@ public class SolicitudContratoMapper {
                 .preCodigoCatastral(entity.getPreCodigoCatastral())
                 .preCodigoAnterior(entity.getPreCodigoAnterior())
                 .preDireccionPrincipal(entity.getPreDireccionPrincipal())
-                .preAreaTotalTer(entity.getPreAreaTotalTer()) // Ojo: legacy usa getPreAreaTotalTerGrafico en autocompletar
-                .preAreaTotalConst(entity.getPreAreaTotalConst()) // Ojo: legacy usa getPreAreaTotalConstAlfanumerico
+                .preAreaTotalTer(entity.getPreAreaTotalTer())
+                .preAreaTotalConst(entity.getPreAreaTotalConst())
                 .nombrePredio(entity.getPreNombrePredio())
                 .build();
     }
 
-    public SerCuentaRsDTO toSerCuentaRsDTO(SerCuenta entity) {
+    public SerCuentaRsDTO toSerCuentaRsDTO(SerCuenta entity, String medidorNumero) {
         if (entity == null) return null;
-        String medidor = null;
 
         return SerCuentaRsDTO.builder()
                 .cueId(entity.getCueId())
                 .cueNumeroCta(entity.getCueNumeroCta())
                 .cueClaveCatastral(entity.getCueClaveCatastral())
-                .medidorNumero(medidor)
+                .medidorNumero(medidorNumero)
                 .propietario(toGesPropietarioRsDTO(entity.getPropietario()))
                 .build();
     }

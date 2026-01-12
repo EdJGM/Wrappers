@@ -25,6 +25,7 @@ export interface SolicitudContratoRsDTO {
     predio?: CatPredioRsDTO;
     cuenta?: SerCuentaRsDTO;
     categoria?: SerCategoriaRsDTO;
+    servicios?: ServicioSolicitadoRsDTO[];
 }
 
 export interface CatalogoRsDTO {
@@ -87,6 +88,7 @@ export interface ServicioSolicitadoRqDTO {
     solicitudContratoId?: number;
     opcDiametroId?: number;
     opcDiametroNombre?: string;
+    servicioPublicoDescripcion?: string;
 }
 
 // --- COMPOSITE DTO (Payload final para el Controller) ---

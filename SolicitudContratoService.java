@@ -14,11 +14,7 @@ import ec.com.intelectus.system.sgd.colmena.catastro.CatBarrio;
 import ec.com.intelectus.system.sgd.colmena.catastro.CatPredio;
 import ec.com.intelectus.system.sgd.colmena.gestion.GesCatalogo;
 import ec.com.intelectus.system.sgd.colmena.gestion.GesPropietario;
-import ec.com.intelectus.system.sgd.colmena.serviciosbasicos.SerCategorias;
-import ec.com.intelectus.system.sgd.colmena.serviciosbasicos.SerCuenta;
-import ec.com.intelectus.system.sgd.colmena.serviciosbasicos.SerServicioPublico;
-import ec.com.intelectus.system.sgd.colmena.serviciosbasicos.SerServicioSolicitado;
-import ec.com.intelectus.system.sgd.colmena.serviciosbasicos.SerSolicitudContrato;
+import ec.com.intelectus.system.sgd.colmena.serviciosbasicos.*;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -99,18 +95,64 @@ public class SolicitudContratoService extends AbstracFacade implements ISolicitu
 
     @Override
     public List<SerCuentaRsDTO> autocompletarCuentaAgua(String search) {
-        List<SerCuentaRsDTO> resultados = new ArrayList<>();
-        if (search != null && !search.isEmpty()) {
-            List<Object> cuentas = cuenta.autoCuentaAguaTodas(search);
-            if (cuentas != null) {
-                for (Object obj : cuentas) {
-                    if (obj instanceof SerCuenta) {
-                        resultados.add(mapper.toSerCuentaRsDTO((SerCuenta) obj));
+        List<SerCuentaRsDTO> listadoResultado = new ArrayList<>();
+
+        try {
+            if (search != null && search.trim().length() > 6) {
+
+                // Por Datos de Cuenta / Propietario
+                List<Object> listados = cuenta.autoCuentaAguaTodas(search);
+
+                if (listados != null && !listados.isEmpty()) {
+                    for (Object obj : listados) {
+                        if (obj instanceof SerCuenta) {
+                            SerCuenta cuentaObj = (SerCuenta) obj;
+                            medidorAgua(cuentaObj);
+                            String numeroMedidor = cuentaObj.getMedidor();
+                            listadoResultado.add(mapper.toSerCuentaRsDTO(cuentaObj, numeroMedidor));
+                        }
+                    }
+                }
+                // Si no hay resultados, buscar por Medidor
+                if (listadoResultado.isEmpty()) {
+                    List<SerMedidorAgua> listaMedidores = cuenta.cargarMedidorByNroMedidorEjb(search.trim());
+
+                    if (listaMedidores != null && listaMedidores.size() == 1) {
+                        try {
+                            SerMedidorAgua medidorAgua = listaMedidores.get(0);
+
+                            List<SerCuenta> cuentasPorMedidor = cuenta.cargarCuentasAguaByMedidorEjb(medidorAgua);
+
+                            if (cuentasPorMedidor != null) {
+                                for (SerCuenta cta : cuentasPorMedidor) {
+                                    String codigoMedidor = (medidorAgua != null) ? medidorAgua.getMedNumeroMedidor() : search;
+
+                                    listadoResultado.add(mapper.toSerCuentaRsDTO(cta, codigoMedidor));
+                                }
+                            }
+                        } catch (Exception e) {
+                            log.warn("Error controlada al cargar cuentas por medidor: {}", e.getMessage());
+                        }
                     }
                 }
             }
+        } catch (Exception e) {
+            log.error("Error en autocompletarCuentaAgua", e);
         }
-        return resultados;
+
+        return listadoResultado;
+    }
+
+    private void medidorAgua(SerCuenta item) {
+        try {
+            List<SerCuentaMedidor> cuentaMedidor = cuenta.listaCuentaMedidoresAguaAdmin(item);
+            for (SerCuentaMedidor serCuentaMedidor : cuentaMedidor) {
+                item.setMedidor(serCuentaMedidor.getMedidor().getMedNumeroMedidor());
+            }
+
+        } catch (Exception e) {
+            log.error("activarMedidorAsignado={}" + e);
+        }
     }
 
     @Override
@@ -182,28 +224,36 @@ public class SolicitudContratoService extends AbstracFacade implements ISolicitu
         List<ServicioSolicitadoRsDTO> listaServicios = new ArrayList<>();
         try {
             if (tipoPedido == null) return listaServicios;
+            Map<String, Object> params = new HashMap<>();
+            params.put("serEstado", (short) 1); // 1 = Activo
+            List<SerServicioPublico> todosServicios = listar(SerServicioPublico.class, params, "serId", true);
 
-            if (tipoPedido == 1 || tipoPedido == 3) {
-                // Buscar directo
-                SerServicioPublico servicioAgua = (SerServicioPublico)buscar(SerServicioPublico.class, (short) 1);
-                if (servicioAgua != null) {
-                    listaServicios.add(ServicioSolicitadoRsDTO.builder()
-                            .servicioPublico(mapper.toServicioPublicoRsDTO(servicioAgua))
-                            .ssoEstado((short) 1)
-                            .ssoEstadoDescripcion("Activo")
-                            .build());
+            for (SerServicioPublico sp : todosServicios) {
+                boolean agregar = false;
+                String tag = sp.getSerTag();
+                if (tag == null) tag = "";
+
+                if (tipoPedido == 2) {
+                    // CASO 2: ALCANTARILLADO
+                    if ("ALCANTARILLADO".equals(tag)) {
+                        agregar = true;
+                    }
+                } else if (tipoPedido == 1) {
+                    // CASO 1: AGUA
+                    if (!"ALCANTARILLADO".equals(tag)) {
+                        agregar = true;
+                    }
+                } else if (tipoPedido == 3) {
+                    // CASO 3: AMBOS -> Agrega todo
+                    agregar = true;
                 }
-            }
 
-            if (tipoPedido == 2 || tipoPedido == 3) {
-                // Buscar directo
-                SerServicioPublico servicioAlcantarillado = (SerServicioPublico)buscar(SerServicioPublico.class, (short) 2);
-                if (servicioAlcantarillado != null) {
-                    listaServicios.add(ServicioSolicitadoRsDTO.builder()
-                            .servicioPublico(mapper.toServicioPublicoRsDTO(servicioAlcantarillado))
-                            .ssoEstado((short) 1)
-                            .ssoEstadoDescripcion("Activo")
-                            .build());
+                if (agregar) {
+                    SerServicioSolicitado tempEntity = new SerServicioSolicitado();
+                    tempEntity.setServicioPublico(sp);
+                    tempEntity.setSsoEstado((short) 1);
+
+                    listaServicios.add(mapper.toServicioSolicitadoRsDTO(tempEntity));
                 }
             }
         } catch (Exception e) {
@@ -238,43 +288,8 @@ public class SolicitudContratoService extends AbstracFacade implements ISolicitu
                     entity.setSocResponsableFactibilidad(cabecera.getSocResponsableFactibilidad());
                     entity.setSocExistenciaRed(cabecera.getSocExistenciaRed());
 
-                    // Categoria
-                    if (cabecera.getCategoriaId() != null) {
-                        SerCategorias cat = new SerCategorias();
-                        cat.setCtgId(cabecera.getCategoriaId().shortValue());
-                        entity.setCategoria(cat);
-                    } else {
-                        entity.setCategoria(null);
-                    }
-
-                    // Predio
-                    try {
-                        if (cabecera.getPredioId() != null && cabecera.getPredioId() > 0) {
-                            CatPredio p = new CatPredio();
-                            p.setPreId(cabecera.getPredioId());
-                            entity.setPredio(p);
-                        } else {
-                            entity.setPredio(null);
-                        }
-                    } catch (Exception e) {
-                        entity.setPredio(null);
-                    }
-
-                    // Propietario
-                    if (cabecera.getPropietarioId() != null) {
-                        GesPropietario prop = new GesPropietario();
-                        prop.setProId(cabecera.getPropietarioId());
-                        entity.setPropietario(prop);
-                    }
-
-                    // Cuenta
-                    if (cabecera.getCuentaId() != null) {
-                        SerCuenta cta = new SerCuenta();
-                        cta.setCueId(cabecera.getCuentaId());
-                        entity.setCuenta(cta);
-                    } else {
-                        entity.setCuenta(null);
-                    }
+                    // Relaciones (Categoria, Predio, Propietario, Cuenta)
+                    actualizarRelaciones(entity, cabecera);
                     modificar(entity, objectoOldSolicitud, usuario);
 
                 } else {
@@ -287,27 +302,11 @@ public class SolicitudContratoService extends AbstracFacade implements ISolicitu
                 // ----------------------------------------------------------------
                 entity = mapper.toSolicitudContratoEntity(cabecera);
 
-                try {
-                    if (cabecera.getPredioId() != null && cabecera.getPredioId() > 0) {
-                        CatPredio p = new CatPredio();
-                        p.setPreId(cabecera.getPredioId());
-                        entity.setPredio(p);
-                    }
-                } catch (Exception e) {
-                    entity.setPredio(new CatPredio());
-                }
-
-                if (cabecera.getPropietarioId() != null) {
-                    GesPropietario prop = new GesPropietario();
-                    prop.setProId(cabecera.getPropietarioId());
-                    entity.setPropietario(prop);
-                }
-
+                actualizarRelaciones(entity, cabecera);
                 entity.setSocFechaSolicitud(new Date());
                 entity.setSocEstadoSolicitud('R'); // R = Registrado
-
                 String propId = (entity.getPropietario() != null) ? String.valueOf(entity.getPropietario().getProId()) : "";
-                usuario.setDescripcion("Se creó la solicitud " + propId);
+                usuario.setDescripcion("Se creó la solicitud para propietario: " + propId);
                 crear(entity, usuario);
                 getEntityManager().flush(); // Para asegurar ID
             }
@@ -315,25 +314,54 @@ public class SolicitudContratoService extends AbstracFacade implements ISolicitu
             // ----------------------------------------------------------------
             // GESTIÓN DE DETALLES (SERVICIOS)
             // ----------------------------------------------------------------
-            // Nota: El legacy itera "listaServicios" y filtra por tipo (1,2,3).
-            // Aquí iteramos "detalles" que ya viene filtrado desde el Front.
-            if (detalles != null && !detalles.isEmpty()) {
+            boolean esCreacion = (cabecera.getSocId() == null);
+
+            if ((detalles == null || detalles.isEmpty())) {
+
+                Map<String, Object> params = new HashMap<>();
+                params.put("serEstado", (short) 1);
+                List<SerServicioPublico> todosServicios = listar(SerServicioPublico.class, params, "serId", true);
+
+                for (SerServicioPublico sp : todosServicios) {
+                    boolean agregar = false;
+                    String tag = sp.getSerTag();
+                    if (tag == null) tag = "";
+
+                    Short tipoPedido = entity.getSocServPedido();
+
+                    if (tipoPedido == 2) { // Solo Alcantarillado
+                        if ("ALCANTARILLADO".equals(tag)) agregar = true;
+                    } else if (tipoPedido == 1) { // Solo Agua
+                        if (!"ALCANTARILLADO".equals(tag)) agregar = true;
+                    } else if (tipoPedido == 3) { // Ambos
+                        agregar = true;
+                    }
+
+                    if (agregar) {
+                        SerServicioSolicitado detEntity = new SerServicioSolicitado();
+                        detEntity.setSolicitudContrato(entity);
+                        detEntity.setServicioPublico(sp);
+                        detEntity.setSsoEstado((short) 1);
+
+                        usuario.setDescripcion("Se creó servicio automático: " + sp.getSerDescripcion());
+                        crear(detEntity, usuario);
+                    }
+                }
+            }
+            // Si enviaron detalles explícitos
+            else {
                 for (ServicioSolicitadoRqDTO detDto : detalles) {
                     SerServicioSolicitado detEntity;
 
                     if (detDto.getSsoId() == null) {
+                        // --- NUEVO DETALLE EN LA LISTA ---
                         detEntity = new SerServicioSolicitado();
                         detEntity.setSolicitudContrato(entity);
                         detEntity.setSsoEstado(detDto.getSsoEstado());
 
-                        if (detDto.getServicioPublicoId() != null) {
-                            SerServicioPublico sp = (SerServicioPublico)buscar(SerServicioPublico.class, detDto.getServicioPublicoId().shortValue());
-                            detEntity.setServicioPublico(sp);
-                        }
-
                         // Asignar Servicio
                         if (detDto.getServicioPublicoId() != null) {
-                            SerServicioPublico sp = (SerServicioPublico)buscar(SerServicioPublico.class, detDto.getServicioPublicoId().shortValue());
+                            SerServicioPublico sp = (SerServicioPublico) buscar(SerServicioPublico.class, detDto.getServicioPublicoId().shortValue());
                             detEntity.setServicioPublico(sp);
                         }
 
@@ -343,13 +371,13 @@ public class SolicitudContratoService extends AbstracFacade implements ISolicitu
                             detEntity.setOpcDiametro(diametro);
                         }
 
-                        usuario.setDescripcion("Se creó el servicio de la solicitud  " + entity.getSocId());
+                        usuario.setDescripcion("Se agregó servicio ID: " + detDto.getServicioPublicoId());
                         crear(detEntity, usuario);
 
                     } else {
-                        // --- MODIFICACIÓN DE SERVICIO EXISTENTE ---
-                        detEntity = (SerServicioSolicitado)buscar(SerServicioSolicitado.class, detDto.getSsoId());
-                        SerServicioSolicitado detEntityOld = detEntity;
+                        // --- MODIFICAR DETALLE EXISTENTE ---
+                        detEntity = (SerServicioSolicitado) buscar(SerServicioSolicitado.class, detDto.getSsoId());
+                        SerServicioSolicitado detEntityOld = detEntity; // Para auditoría si fuera clone
 
                         if (detEntity != null) {
                             detEntity.setSsoEstado(detDto.getSsoEstado());
@@ -361,6 +389,7 @@ public class SolicitudContratoService extends AbstracFacade implements ISolicitu
                                 detEntity.setOpcDiametro(null);
                             }
 
+                            usuario.setDescripcion("Se modificó servicio ID: " + detDto.getSsoId());
                             modificar(detEntity, detEntityOld, usuario);
                         }
                     }
@@ -372,6 +401,47 @@ public class SolicitudContratoService extends AbstracFacade implements ISolicitu
         } catch (Exception e) {
             log.error("Error al guardar solicitud: {}", e.getMessage());
             throw new RuntimeException("Error al guardar la solicitud", e);
+        }
+    }
+
+    // Helper para evitar duplicar código de seteo de relaciones
+    private void actualizarRelaciones(SerSolicitudContrato entity, SolicitudContratoRqDTO cabecera) {
+        // Categoria
+        if (cabecera.getCategoriaId() != null) {
+            SerCategorias cat = new SerCategorias();
+            cat.setCtgId(cabecera.getCategoriaId().shortValue());
+            entity.setCategoria(cat);
+        } else {
+            entity.setCategoria(null);
+        }
+
+        // Predio
+        try {
+            if (cabecera.getPredioId() != null && cabecera.getPredioId() > 0) {
+                CatPredio p = new CatPredio();
+                p.setPreId(cabecera.getPredioId());
+                entity.setPredio(p);
+            } else {
+                entity.setPredio(null);
+            }
+        } catch (Exception e) {
+            entity.setPredio(null);
+        }
+
+        // Propietario
+        if (cabecera.getPropietarioId() != null) {
+            GesPropietario prop = new GesPropietario();
+            prop.setProId(cabecera.getPropietarioId());
+            entity.setPropietario(prop);
+        }
+
+        // Cuenta
+        if (cabecera.getCuentaId() != null) {
+            SerCuenta cta = new SerCuenta();
+            cta.setCueId(cabecera.getCuentaId());
+            entity.setCuenta(cta);
+        } else {
+            entity.setCuenta(null);
         }
     }
 
@@ -431,7 +501,4 @@ public class SolicitudContratoService extends AbstracFacade implements ISolicitu
         }
         return resultado;
     }
-
-
-
 }
